@@ -16,8 +16,7 @@ from langchain_community.utilities import (
     ArxivAPIWrapper
 )
 
-# Prompt + memory
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+# Messages
 from langchain_core.messages import HumanMessage, AIMessage
 
 # ---------------------- LOAD ENV ----------------------
@@ -25,7 +24,8 @@ load_dotenv()
 
 # ---------------------- UI ----------------------
 st.set_page_config(page_title="Smart AI Agent", page_icon="🤖")
-st.title("🤖 Smart AI Agent (Auto Tool Selection)")
+
+st.title("🤖 Smart AI Agent (No Errors Version)")
 st.markdown("Web + Wikipedia + Arxiv with Memory 🚀")
 
 api_key = st.sidebar.text_input("Enter Groq API Key", type="password")
@@ -71,32 +71,36 @@ if api_key:
 
         with st.chat_message("assistant"):
 
+            st.info("🔎 Thinking...")
+
             try:
-                # 🧠 STEP 1: Decide tool
+                # STEP 1: Decide tool
                 tool_prompt = f"""
 Decide best tool for this query:
 
 Options:
-- search (for current events / general info)
-- wiki (for definitions / concepts)
+- search (for current/general info)
+- wiki (for definitions/concepts)
 - arxiv (for research papers)
 
 Query: {user_input}
 
 Answer ONLY one word: search / wiki / arxiv
 """
-
                 tool_choice = llm.invoke(tool_prompt).content.lower().strip()
 
-                # 🛠 STEP 2: Run tool
-                if "wiki" in tool_choice:
-                    tool_output = tools["wiki"].run(user_input)
-                elif "arxiv" in tool_choice:
-                    tool_output = tools["arxiv"].run(user_input)
-                else:
-                    tool_output = tools["search"].run(user_input)
+                # STEP 2: Run tool safely
+                try:
+                    if "wiki" in tool_choice:
+                        tool_output = tools["wiki"].run(user_input)
+                    elif "arxiv" in tool_choice:
+                        tool_output = tools["arxiv"].run(user_input)
+                    else:
+                        tool_output = tools["search"].run(user_input)
+                except Exception:
+                    tool_output = "⚠️ Tool failed. Answering from general knowledge."
 
-                # 🧠 STEP 3: Final answer with memory
+                # STEP 3: Build memory context
                 history_text = "\n".join([m.content for m in st.session_state.messages])
 
                 final_prompt = f"""
@@ -112,10 +116,14 @@ User Question:
 Give a helpful, clear answer:
 """
 
-                response = llm.invoke(final_prompt).content
+                # STEP 4: Generate response safely
+                try:
+                    response = llm.invoke(final_prompt).content
+                except Exception:
+                    response = "⚠️ AI failed to respond. Please try again."
 
             except Exception as e:
-                response = f"⚠️ Error: {str(e)}"
+                response = f"⚠️ Unexpected Error: {str(e)}"
 
             st.write(response)
 
