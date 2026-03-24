@@ -2,14 +2,12 @@ streamlit
 python-dotenv
 
 langchain
-langchain-core
 langchain-community
 langchain-groq
-langchainhub
 
 duckduckgo-search
-
 arxiv
 wikipedia
+
 validators==0.28.1
 youtube_transcript_api
