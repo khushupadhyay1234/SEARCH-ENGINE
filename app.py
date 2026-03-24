@@ -5,44 +5,53 @@ from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 
 # Tools
-from langchain_community.utilities import ArxivAPIWrapper, WikipediaAPIWrapper
 from langchain_community.tools import (
-    ArxivQueryRun,
+    DuckDuckGoSearchRun,
     WikipediaQueryRun,
-    DuckDuckGoSearchResults
+    ArxivQueryRun
 )
+
+from langchain_community.utilities import (
+    WikipediaAPIWrapper,
+    ArxivAPIWrapper
+)
+
+# Prompt + memory
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage, AIMessage
 
 # ---------------------- LOAD ENV ----------------------
 load_dotenv()
 
 # ---------------------- UI ----------------------
-st.set_page_config(page_title="Smart Search Chatbot", page_icon="🔎")
-st.title("🔎 Smart Search Chatbot")
-st.markdown("Search Web + Arxiv + Wikipedia without agent errors 🚀")
+st.set_page_config(page_title="Smart AI Agent", page_icon="🤖")
+st.title("🤖 Smart AI Agent (Auto Tool Selection)")
+st.markdown("Web + Wikipedia + Arxiv with Memory 🚀")
 
-# Sidebar
 api_key = st.sidebar.text_input("Enter Groq API Key", type="password")
 
 # ---------------------- TOOLS ----------------------
-search = DuckDuckGoSearchResults(num_results=3)
+search_tool = DuckDuckGoSearchRun()
+wiki_tool = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper())
+arxiv_tool = ArxivQueryRun(api_wrapper=ArxivAPIWrapper())
 
-arxiv = ArxivQueryRun(
-    api_wrapper=ArxivAPIWrapper(top_k_results=1, doc_content_chars_max=300)
-)
+tools = {
+    "search": search_tool,
+    "wiki": wiki_tool,
+    "arxiv": arxiv_tool
+}
 
-wiki = WikipediaQueryRun(
-    api_wrapper=WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=300)
-)
-
-# ---------------------- SESSION ----------------------
+# ---------------------- SESSION MEMORY ----------------------
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "assistant", "content": "Hi! Ask me anything 🔍"}
+        AIMessage(content="Hi! I can search the web, Wikipedia, and Arxiv. Ask me anything!")
     ]
 
+# Display chat
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.write(msg["content"])
+    role = "assistant" if isinstance(msg, AIMessage) else "user"
+    with st.chat_message(role):
+        st.write(msg.content)
 
 # ---------------------- MAIN ----------------------
 if api_key:
@@ -53,46 +62,64 @@ if api_key:
         temperature=0
     )
 
-    if prompt := st.chat_input("Ask something..."):
+    if user_input := st.chat_input("Ask something..."):
 
-        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.session_state.messages.append(HumanMessage(content=user_input))
 
         with st.chat_message("user"):
-            st.write(prompt)
+            st.write(user_input)
 
         with st.chat_message("assistant"):
 
             try:
-                # 🔥 Run tools manually
-                web_result = search.run(prompt)
-                wiki_result = wiki.run(prompt)
-                arxiv_result = arxiv.run(prompt)
+                # 🧠 STEP 1: Decide tool
+                tool_prompt = f"""
+Decide best tool for this query:
 
-                # Combine results
-                combined = f"""
-Web Search:
-{web_result}
+Options:
+- search (for current events / general info)
+- wiki (for definitions / concepts)
+- arxiv (for research papers)
 
-Wikipedia:
-{wiki_result}
+Query: {user_input}
 
-Arxiv:
-{arxiv_result}
-
-Answer the user clearly using above info:
-{prompt}
+Answer ONLY one word: search / wiki / arxiv
 """
 
-                response = llm.invoke(combined).content
+                tool_choice = llm.invoke(tool_prompt).content.lower().strip()
+
+                # 🛠 STEP 2: Run tool
+                if "wiki" in tool_choice:
+                    tool_output = tools["wiki"].run(user_input)
+                elif "arxiv" in tool_choice:
+                    tool_output = tools["arxiv"].run(user_input)
+                else:
+                    tool_output = tools["search"].run(user_input)
+
+                # 🧠 STEP 3: Final answer with memory
+                history_text = "\n".join([m.content for m in st.session_state.messages])
+
+                final_prompt = f"""
+Conversation History:
+{history_text}
+
+Tool Result:
+{tool_output}
+
+User Question:
+{user_input}
+
+Give a helpful, clear answer:
+"""
+
+                response = llm.invoke(final_prompt).content
 
             except Exception as e:
                 response = f"⚠️ Error: {str(e)}"
 
             st.write(response)
 
-        st.session_state.messages.append(
-            {"role": "assistant", "content": response}
-        )
+        st.session_state.messages.append(AIMessage(content=response))
 
 else:
-    st.warning("Enter API key to continue")
+    st.warning("⚠️ Enter Groq API key to continue")
