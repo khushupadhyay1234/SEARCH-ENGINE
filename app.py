@@ -1,19 +1,17 @@
 import streamlit as st
-import os
 from dotenv import load_dotenv
 
 # LangChain imports
 from langchain_groq import ChatGroq
-from langchain_community.utilities import (
-    ArxivAPIWrapper,
-    WikipediaAPIWrapper,
-)
+from langchain_community.utilities import ArxivAPIWrapper, WikipediaAPIWrapper
 from langchain_community.tools import (
     ArxivQueryRun,
     WikipediaQueryRun,
-    DuckDuckGoSearchResults   # ✅ FIXED IMPORT
+    DuckDuckGoSearchResults
 )
-from langchain.agents import initialize_agent, AgentType
+
+from langchain.agents import create_react_agent, AgentExecutor
+from langchain import hub
 from langchain.callbacks import StreamlitCallbackHandler
 
 # ---------------------- LOAD ENV ----------------------
@@ -23,9 +21,7 @@ load_dotenv()
 st.set_page_config(page_title="LangChain - Chat with search", page_icon="🔎")
 
 st.title("🔎 LangChain - Chat with search")
-st.markdown(
-    "This chatbot can search the web, Arxiv, and Wikipedia using LangChain agents."
-)
+st.markdown("Chatbot with Web + Arxiv + Wikipedia search")
 
 # ---------------------- SIDEBAR ----------------------
 st.sidebar.title("Settings")
@@ -33,42 +29,31 @@ api_key = st.sidebar.text_input("Enter Groq API Key:", type="password")
 
 # ---------------------- TOOLS ----------------------
 arxiv = ArxivQueryRun(
-    api_wrapper=ArxivAPIWrapper(
-        top_k_results=1,
-        doc_content_chars_max=200
-    )
+    api_wrapper=ArxivAPIWrapper(top_k_results=1, doc_content_chars_max=200)
 )
 
 wiki = WikipediaQueryRun(
-    api_wrapper=WikipediaAPIWrapper(
-        top_k_results=1,
-        doc_content_chars_max=200
-    )
+    api_wrapper=WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=200)
 )
 
-# DuckDuckGo Search
 search = DuckDuckGoSearchResults(num_results=5)
 
 tools = [search, arxiv, wiki]
 
-# ---------------------- SESSION STATE ----------------------
+# ---------------------- SESSION ----------------------
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {
-            "role": "assistant",
-            "content": "Hi, I'm a chatbot who can search the web. How can I help you?",
-        }
+        {"role": "assistant", "content": "Hi, I can search the web. Ask me anything!"}
     ]
 
-# ---------------------- DISPLAY CHAT ----------------------
+# Display chat
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
 
-# ---------------------- MAIN LOGIC ----------------------
+# ---------------------- MAIN ----------------------
 if api_key:
 
-    # Initialize LLM
     llm = ChatGroq(
         groq_api_key=api_key,
         model="llama-3.1-8b-instant",
@@ -76,52 +61,44 @@ if api_key:
         temperature=0
     )
 
-    # Initialize agent
-    agent = initialize_agent(
+    # 🔥 NEW AGENT SYSTEM
+    prompt = hub.pull("hwchase17/react")
+
+    agent = create_react_agent(llm, tools, prompt)
+
+    agent_executor = AgentExecutor(
+        agent=agent,
         tools=tools,
-        llm=llm,
-        agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-        verbose=True,
-        handle_parsing_errors=True
+        verbose=True
     )
 
     # Chat input
-    if prompt := st.chat_input("Ask something..."):
+    if prompt_input := st.chat_input("Ask something..."):
 
-        # Save user message
-        st.session_state.messages.append({
-            "role": "user",
-            "content": prompt
-        })
+        st.session_state.messages.append(
+            {"role": "user", "content": prompt_input}
+        )
 
-        # Display user message
         with st.chat_message("user"):
-            st.write(prompt)
+            st.write(prompt_input)
 
-        # Assistant response
         with st.chat_message("assistant"):
 
-            st_callback = StreamlitCallbackHandler(
-                st.container(),
-                expand_new_thoughts=True,
-                collapse_completed_thoughts=True
-            )
+            st_callback = StreamlitCallbackHandler(st.container())
 
             try:
-                response = agent.run(
-                    prompt,
-                    callbacks=[st_callback]
-                )
+                response = agent_executor.invoke(
+                    {"input": prompt_input},
+                    {"callbacks": [st_callback]}
+                )["output"]
             except Exception as e:
                 response = f"⚠️ Error: {str(e)}"
 
             st.write(response)
 
-        # Save assistant response
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": response
-        })
+        st.session_state.messages.append(
+            {"role": "assistant", "content": response}
+        )
 
 else:
-    st.warning("⚠️ Please enter your Groq API key in the sidebar to continue.")
+    st.warning("⚠️ Enter Groq API key to continue")
