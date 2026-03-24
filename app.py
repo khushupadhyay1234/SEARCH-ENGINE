@@ -11,8 +11,8 @@ from langchain_community.utilities import (
 from langchain_community.tools import (
     ArxivQueryRun,
     WikipediaQueryRun,
+    DuckDuckGoSearchResults   # ✅ FIXED IMPORT
 )
-from langchain_community.tools.ddg_search import DuckDuckGoSearchResults
 from langchain.agents import initialize_agent, AgentType
 from langchain.callbacks import StreamlitCallbackHandler
 
@@ -33,14 +33,20 @@ api_key = st.sidebar.text_input("Enter Groq API Key:", type="password")
 
 # ---------------------- TOOLS ----------------------
 arxiv = ArxivQueryRun(
-    api_wrapper=ArxivAPIWrapper(top_k_results=1, doc_content_chars_max=200)
+    api_wrapper=ArxivAPIWrapper(
+        top_k_results=1,
+        doc_content_chars_max=200
+    )
 )
 
 wiki = WikipediaQueryRun(
-    api_wrapper=WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=200)
+    api_wrapper=WikipediaAPIWrapper(
+        top_k_results=1,
+        doc_content_chars_max=200
+    )
 )
 
-# Use DuckDuckGoSearchResults for better reliability (fixes "No good DuckDuckGo Search Result was found")
+# DuckDuckGo Search
 search = DuckDuckGoSearchResults(num_results=5)
 
 tools = [search, arxiv, wiki]
@@ -62,9 +68,9 @@ for msg in st.session_state.messages:
 # ---------------------- MAIN LOGIC ----------------------
 if api_key:
 
-    # 🔥 Initialize LLM with DIRECT API KEY (FIX)
+    # Initialize LLM
     llm = ChatGroq(
-        groq_api_key=api_key,   # ✅ FIXED HERE
+        groq_api_key=api_key,
         model="llama-3.1-8b-instant",
         streaming=True,
         temperature=0
@@ -83,7 +89,10 @@ if api_key:
     if prompt := st.chat_input("Ask something..."):
 
         # Save user message
-        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.session_state.messages.append({
+            "role": "user",
+            "content": prompt
+        })
 
         # Display user message
         with st.chat_message("user"):
@@ -92,7 +101,6 @@ if api_key:
         # Assistant response
         with st.chat_message("assistant"):
 
-            # Thinking UI
             st_callback = StreamlitCallbackHandler(
                 st.container(),
                 expand_new_thoughts=True,
@@ -110,9 +118,10 @@ if api_key:
             st.write(response)
 
         # Save assistant response
-        st.session_state.messages.append(
-            {"role": "assistant", "content": response}
-        )
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": response
+        })
 
 else:
     st.warning("⚠️ Please enter your Groq API key in the sidebar to continue.")
